@@ -68,6 +68,7 @@ class FelicaStandard(tt3.Type3Tag):
         0x0C: ("RC-S954",   12,  8),
         0x0D: ("RC-S960",   12, 10),  # RC-S880/889
         0x20: ("RC-S962",   12, 10),  # RC-S885/888/892/893
+        0x31: ("RC-S???",    1,  1),  # new suica and pasmo
         0x32: ("RC-SA00/1",  1,  1),  # AES chip
         0x35: ("RC-SA00/2",  1,  1),
     }

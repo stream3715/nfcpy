@@ -25,6 +25,7 @@
 import os
 import re
 import errno
+import asyncio
 from binascii import hexlify
 
 if not os.getenv("READTHEDOCS"):  # pragma: no cover
@@ -43,6 +44,11 @@ try:
     import termios
 except ImportError:  # pragma: no cover
     assert os.name != 'posix'
+
+try:
+    import bleak
+except ImportError:
+    raise ImportError("missing ble module, try 'pip install bleak'")
 
 import logging
 log = logging.getLogger(__name__)
@@ -343,3 +349,110 @@ class USB(object):
             except libusb.USBError as error:
                 log.error("%r", error)
                 raise IOError(errno.EIO, os.strerror(errno.EIO))
+
+
+# synchronous wait
+def wait(coroutine):
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(coroutine)
+
+
+class BLE(object):
+    TYPE = "BLE"
+
+    MAN_NAME_UUID = "00002a29-0000-1000-8000-00805f9b34fb"
+    MODEL_NBR_UUID = "00002a24-0000-1000-8000-00805f9b34fb"
+
+    prev_read = None
+
+    @classmethod
+    def find(cls, path, timeout):
+        if not path.startswith("ble"):
+            return
+
+        if ':' in path:
+            address = path.split(':')[1].upper()
+            if len(address) != 12:
+                return
+            return '{:2}:{:2}:{:2}:{:2}:{:2}:{:2}'.format(address[0:2], address[2:4], address[4:6], address[6:8], address[8:10], address[10:12])
+
+        log.debug("using bleak-{}".format(bleak.__version__))
+
+        devices = wait(bleak.BleakScanner.discover(timeout=timeout))
+
+        log.debug('{} BLE devices found'.format(len(devices)))
+
+        return devices
+
+    def __init__(self, address, timeout=10.):
+        wait(self.connect(address, timeout))
+
+    def __del__(self):
+        wait(self.disconnect())
+
+    def close(self):
+        pass
+
+    async def connect(self, address, timeout):
+        self.client = bleak.BleakClient(address)
+        await self.client.connect(timeout=timeout)
+        self._manufacture_name = (await self.client.read_gatt_char(self.MAN_NAME_UUID)).decode()
+        self._product_name = (await self.client.read_gatt_char(self.MODEL_NBR_UUID)).decode()
+
+    async def disconnect(self):
+        try:
+            await self.client.disconnect()
+        except asyncio.exceptions.TimeoutError:
+            return
+        log.debug('disconnected from BLE device')
+
+    @property
+    def manufacturer_name(self):
+        return self._manufacture_name
+
+    @property
+    def product_name(self):
+        return self._product_name
+
+    def get_uuids(self):
+        return [v.uuid for v in (wait(self.client.get_services())).services.values()]
+
+    def notify_only(self, uuid):
+        wait(self.client.start_notify(uuid, lambda sender, data: None))
+
+    def read(self, timeout=None):
+        read = self._read()
+        frame = read
+
+        if frame == self.prev_read:
+            read = self._read()
+            frame = read
+
+        if frame == self.prev_read:
+            raise IOError()
+
+        if frame[5] > 0:
+            length = frame[5] + 10
+            while len(frame) < length:
+                read = self._read()
+                frame += read
+            assert len(frame) == length
+
+        self.prev_read = read[:]
+
+        log.log(logging.DEBUG-1, "<<< %s", hexlify(frame).decode())
+
+        return frame
+
+    def _read(self):
+        return wait(self.client.read_gatt_char(self.read_uuid))
+
+    def write(self, frame, timeout=None):
+        log.log(logging.DEBUG-1, ">>> %s", hexlify(frame).decode())
+
+        while len(frame) > 0:
+            self._write(frame[:20])
+            frame = frame[20:]
+
+    def _write(self, frame):
+        wait(self.client.write_gatt_char(self.write_uuid, frame))

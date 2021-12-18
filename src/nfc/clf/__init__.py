@@ -125,6 +125,12 @@ class ContactlessFrontend(object):
            Windows systems to open the serial port ``COM<port>`` and
            use the driver module ``nfc/dev/<driver>.py`` for access.
 
+        ``ble[:address]``
+
+           with optional *address* name as twelve-digit hexadecimal numbers
+           without colon. For example, ``ble:112233445566`` would connect to
+           ble device which has that address.
+
         ``udp[:host][:port]``
 
            with optional *host* name or address and *port*

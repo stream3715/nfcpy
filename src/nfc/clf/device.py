@@ -53,6 +53,10 @@ usb_device_map = {
 
 tty_driver_list = ["arygon", "pn532"]
 
+ble_device_map = {
+    '233e8100-3a1b-1c59-9bee-180373dd03a1': 'rcs390'  # Sony RC-S390
+}
+
 
 def connect(path):
     """Connect to a local device identified by *path* and load the
@@ -118,6 +122,42 @@ def connect(path):
                         tty.close()
                     if not globbed:
                         raise
+
+    found = transport.BLE.find(path, 10.)
+    if found is not None:
+        def get_module(uuid):
+            module = ble_device_map.get(uuid)
+
+            return module
+
+        def connect_ble(module, ble):
+            driver = importlib.import_module("nfc.clf." + module)
+            device = driver.init(ble)
+            device._path = path
+            return device
+
+        if isinstance(found, str):
+            address = found
+            ble = transport.BLE(address, 60.)
+
+            uuids = ble.get_uuids()
+
+            for uuid in uuids:
+                module = get_module(uuid)
+                if module is not None:
+                    log.debug("trying to connect {}".format(address))
+                    return connect_ble(module, ble)
+        else:
+            for device in found:
+                uuids = device.metadata['uuids']
+                for uuid in uuids:
+                    module = get_module(uuid)
+                    if module is not None:
+                        ble = transport.BLE(device.address, 60.)
+
+                        log.debug(
+                            "trying to connect {}".format(device.address))
+                        return connect_ble(module, ble)
 
     if path.startswith("udp"):
         path = path.split(':')

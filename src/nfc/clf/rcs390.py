@@ -42,7 +42,6 @@ from . import device
 from . import rcs380
 
 import logging
-log = logging.getLogger(__name__)
 
 READ_UUID = "233e8101-3a1b-1c59-9bee-180373dd03a1"
 DUMMY_UUID = "233e8102-3a1b-1c59-9bee-180373dd03a1"
@@ -73,12 +72,12 @@ class Device(device.Device):
         return self.port100.mute()
 
     def sense_tta(self, target):
-        log.error('not supported?')
+        self.log.error('not supported?')
         return None
         return self.port100.sense_tta(target)
 
     def sense_ttb(self, target):
-        log.error('not supported?')
+        self.log.error('not supported?')
         return None
         return self.port100.sense_ttb(target)
 
@@ -86,27 +85,27 @@ class Device(device.Device):
         return self.port100.sense_ttf(target)
 
     def sense_dep(self, target):
-        log.error('not supported?')
+        self.log.error('not supported?')
         return None
         return self.port100.sense_dep(target)
 
     def listen_tta(self, target, timeout):
-        log.error('not supported?')
+        self.log.error('not supported?')
         return None
         return self.port100.listen_tta(target, timeout)
 
     def listen_ttb(self, target, timeout):
-        log.error('not supported?')
+        self.log.error('not supported?')
         return None
         return self.port100.listen_ttb(target, timeout)
 
     def listen_ttf(self, target, timeout):
-        log.error('not supported?')
+        self.log.error('not supported?')
         return None
         return self.port100.listen_ttf(target, timeout)
 
     def listen_dep(self, target, timeout):
-        log.error('not supported?')
+        self.log.error('not supported?')
         return None
         return self.port100.listen_dep(target, timeout)
 
@@ -131,6 +130,7 @@ def init(transport):
     transport.notify_only(DUMMY_UUID)
     transport.read_uuid = READ_UUID
     transport.write_uuid = WRITE_UUID
+    log = logging.getLogger(__name__)
     device = Device(rcs380.init(transport, logger=log,
                     command_type=3), logger=log)
     device._vendor_name = 'Sony'

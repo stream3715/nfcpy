@@ -42,6 +42,7 @@ from . import device
 from . import rcs380
 
 import logging
+log = logging.getLogger(__name__)
 
 READ_UUID = "233e8101-3a1b-1c59-9bee-180373dd03a1"
 DUMMY_UUID = "233e8102-3a1b-1c59-9bee-180373dd03a1"
@@ -130,7 +131,6 @@ def init(transport):
     transport.notify_only(DUMMY_UUID)
     transport.read_uuid = READ_UUID
     transport.write_uuid = WRITE_UUID
-    log = logging.getLogger(__name__)
     device = Device(rcs380.init(transport, logger=log,
                     command_type=3), logger=log)
     device._vendor_name = 'Sony'

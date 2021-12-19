@@ -29,7 +29,7 @@ function    support  remarks
 ==========  =======  ============
 sense_tta   no?
 sense_ttb   no?
-sense_ttf   yes      very unstable
+sense_ttf   yes      very slow
 sense_dep   no?
 listen_tta  no?
 listen_ttb  no?

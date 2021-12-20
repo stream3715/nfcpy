@@ -422,15 +422,14 @@ class BLE(object):
 
     def read(self, timeout=None):
         read = self._read()
-        frame = read
 
-        if frame == self.prev_read:
+        if read == self.prev_read:
             read = self._read()
-            frame = read
 
-        if frame == self.prev_read:
+        if read == self.prev_read:
             raise IOError()
 
+        frame = read
         if frame[5] > 0:
             length = frame[5] + 10
             while len(frame) < length:
@@ -454,5 +453,5 @@ class BLE(object):
             self._write(frame[:20])
             frame = frame[20:]
 
-    def _write(self, frame):
-        wait(self.client.write_gatt_char(self.write_uuid, frame))
+    def _write(self, write):
+        wait(self.client.write_gatt_char(self.write_uuid, write))

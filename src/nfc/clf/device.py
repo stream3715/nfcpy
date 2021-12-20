@@ -153,10 +153,9 @@ def connect(path):
                 for uuid in uuids:
                     module = get_module(uuid)
                     if module is not None:
-                        ble = transport.BLE(device.address, 60.)
-
                         log.debug(
                             "trying to connect {}".format(device.address))
+                        ble = transport.BLE(device.address, 60.)
                         return drive_ble(module, ble)
 
     if path.startswith("udp"):

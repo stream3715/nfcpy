@@ -130,7 +130,7 @@ def connect(path):
 
             return module
 
-        def connect_ble(module, ble):
+        def drive_ble(module, ble):
             driver = importlib.import_module("nfc.clf." + module)
             device = driver.init(ble)
             device._path = path
@@ -146,7 +146,7 @@ def connect(path):
                 module = get_module(uuid)
                 if module is not None:
                     log.debug("trying to connect {}".format(address))
-                    return connect_ble(module, ble)
+                    return drive_ble(module, ble)
         else:
             for device in found:
                 uuids = device.metadata['uuids']
@@ -157,7 +157,7 @@ def connect(path):
 
                         log.debug(
                             "trying to connect {}".format(device.address))
-                        return connect_ble(module, ble)
+                        return drive_ble(module, ble)
 
     if path.startswith("udp"):
         path = path.split(':')

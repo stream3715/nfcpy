@@ -147,15 +147,26 @@ def connect(path):
                 if module is not None:
                     log.debug("trying to connect {}".format(address))
                     return drive_ble(module, ble)
+        elif isinstance(found, dict):
+            # bleak 0.18+: {address: (BLEDevice, AdvertisementData)}
+            for address, (ble_device, adv) in found.items():
+                uuids = adv.service_uuids if adv else []
+                for uuid in uuids:
+                    module = get_module(uuid)
+                    if module is not None:
+                        log.debug("trying to connect {}".format(address))
+                        ble = transport.BLE(address, 60.)
+                        return drive_ble(module, ble)
         else:
-            for device in found:
-                uuids = device.metadata['uuids']
+            # bleak < 0.18: list of BLEDevice
+            for ble_device in found:
+                uuids = ble_device.metadata.get('uuids', [])
                 for uuid in uuids:
                     module = get_module(uuid)
                     if module is not None:
                         log.debug(
-                            "trying to connect {}".format(device.address))
-                        ble = transport.BLE(device.address, 60.)
+                            "trying to connect {}".format(ble_device.address))
+                        ble = transport.BLE(ble_device.address, 60.)
                         return drive_ble(module, ble)
 
     if path.startswith("udp"):

@@ -27,17 +27,18 @@ of Type F tags.
 ==========  =======  ============
 function    support  remarks
 ==========  =======  ============
-sense_tta   no?
-sense_ttb   no?
-sense_ttf   yes      very slow
-sense_dep   no?
-listen_tta  no?
-listen_ttb  no?
-listen_ttf  no?
-listen_dep  no?
+sense_tta   no
+sense_ttb   no
+sense_ttf   yes      slow (BLE)
+sense_dep   no
+listen_tta  no
+listen_ttb  no
+listen_ttf  no
+listen_dep  no
 ==========  =======  ============
 
 """
+import nfc.clf
 from . import device
 from . import rcs380
 
@@ -62,9 +63,9 @@ class Device(device.Device):
     def chipset_name(self):
         return self.port100._chipset_name
 
-    def __init__(self, port100, logger=log):
+    def __init__(self, port100, logger=None):
         self.port100 = port100
-        self.log = logger
+        self.log = logger or log
 
     def close(self):
         return self.port100.close()
@@ -73,42 +74,28 @@ class Device(device.Device):
         return self.port100.mute()
 
     def sense_tta(self, target):
-        self.log.error('not supported?')
-        return None
-        return self.port100.sense_tta(target)
+        raise nfc.clf.UnsupportedTargetError("RC-S390 does not support Type A")
 
     def sense_ttb(self, target):
-        self.log.error('not supported?')
-        return None
-        return self.port100.sense_ttb(target)
+        raise nfc.clf.UnsupportedTargetError("RC-S390 does not support Type B")
 
     def sense_ttf(self, target):
         return self.port100.sense_ttf(target)
 
     def sense_dep(self, target):
-        self.log.error('not supported?')
-        return None
-        return self.port100.sense_dep(target)
+        raise nfc.clf.UnsupportedTargetError("RC-S390 does not support DEP")
 
     def listen_tta(self, target, timeout):
-        self.log.error('not supported?')
-        return None
-        return self.port100.listen_tta(target, timeout)
+        raise nfc.clf.UnsupportedTargetError("RC-S390 does not support listen Type A")
 
     def listen_ttb(self, target, timeout):
-        self.log.error('not supported?')
-        return None
-        return self.port100.listen_ttb(target, timeout)
+        raise nfc.clf.UnsupportedTargetError("RC-S390 does not support listen Type B")
 
     def listen_ttf(self, target, timeout):
-        self.log.error('not supported?')
-        return None
-        return self.port100.listen_ttf(target, timeout)
+        raise nfc.clf.UnsupportedTargetError("RC-S390 does not support listen Type F")
 
     def listen_dep(self, target, timeout):
-        self.log.error('not supported?')
-        return None
-        return self.port100.listen_dep(target, timeout)
+        raise nfc.clf.UnsupportedTargetError("RC-S390 does not support listen DEP")
 
     def get_max_send_data_size(self, target):
         return self.port100.get_max_send_data_size(target)
@@ -131,8 +118,7 @@ def init(transport):
     transport.notify_only(DUMMY_UUID)
     transport.read_uuid = READ_UUID
     transport.write_uuid = WRITE_UUID
-    device = Device(rcs380.init(transport, logger=log,
-                    command_type=3), logger=log)
+    device = Device(rcs380.init(transport, logger=log, command_type=3), logger=log)
     device._vendor_name = 'Sony'
     device._device_name = 'RC-S390'
     return device

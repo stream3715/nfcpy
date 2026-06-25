@@ -48,7 +48,7 @@ except ImportError:  # pragma: no cover
 try:
     import bleak
 except ImportError:
-    raise ImportError("missing ble module, try 'pip install bleak'")
+    bleak = None
 
 import logging
 log = logging.getLogger(__name__)
@@ -351,10 +351,12 @@ class USB(object):
                 raise IOError(errno.EIO, os.strerror(errno.EIO))
 
 
-# synchronous wait
+# モジュールレベル永続ループ — asyncio.get_event_loop() 非推奨を回避
+_ble_loop = asyncio.new_event_loop()
+
+
 def wait(coroutine):
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(coroutine)
+    return _ble_loop.run_until_complete(coroutine)
 
 
 class BLE(object):
@@ -370,25 +372,37 @@ class BLE(object):
         if not path.startswith("ble"):
             return
 
+        if bleak is None:
+            raise IOError(errno.ENODEV, "bleak not installed, try 'pip install bleak'")
+
         if ':' in path:
             address = path.split(':')[1].upper()
             if len(address) != 12:
                 return
-            return '{:2}:{:2}:{:2}:{:2}:{:2}:{:2}'.format(address[0:2], address[2:4], address[4:6], address[6:8], address[8:10], address[10:12])
+            return ':'.join([address[i:i+2] for i in range(0, 12, 2)])
 
         log.debug("using bleak-{}".format(bleak.__version__))
 
-        devices = wait(bleak.BleakScanner.discover(timeout=timeout))
-
-        log.debug('{} BLE devices found'.format(len(devices)))
-
-        return devices
+        try:
+            # bleak 0.18+: return_adv=True で UUID を広告データから取得
+            scan_result = wait(bleak.BleakScanner.discover(
+                timeout=timeout, return_adv=True))
+            log.debug('{} BLE devices found'.format(len(scan_result)))
+            return scan_result
+        except TypeError:
+            devices = wait(bleak.BleakScanner.discover(timeout=timeout))
+            log.debug('{} BLE devices found'.format(len(devices)))
+            return devices
 
     def __init__(self, address, timeout=10.):
         wait(self.connect(address, timeout))
 
     def __del__(self):
-        wait(self.disconnect())
+        if hasattr(self, 'client'):
+            try:
+                wait(self.client.disconnect())
+            except Exception:
+                pass
 
     def close(self):
         pass
@@ -399,13 +413,6 @@ class BLE(object):
         self._manufacture_name = (await self.client.read_gatt_char(self.MAN_NAME_UUID)).decode()
         self._product_name = (await self.client.read_gatt_char(self.MODEL_NBR_UUID)).decode()
 
-    async def disconnect(self):
-        try:
-            await self.client.disconnect()
-        except asyncio.exceptions.TimeoutError:
-            return
-        log.debug('disconnected from BLE device')
-
     @property
     def manufacturer_name(self):
         return self._manufacture_name
@@ -415,7 +422,8 @@ class BLE(object):
         return self._product_name
 
     def get_uuids(self):
-        return [v.uuid for v in (wait(self.client.get_services())).services.values()]
+        # bleak 0.18+ では services プロパティで取得
+        return [s.uuid for s in self.client.services]
 
     def notify_only(self, uuid):
         wait(self.client.start_notify(uuid, lambda sender, data: None))
@@ -427,17 +435,18 @@ class BLE(object):
             read = self._read()
 
         if read == self.prev_read:
-            raise IOError()
+            raise IOError(errno.ETIMEDOUT, os.strerror(errno.ETIMEDOUT))
 
-        frame = read
-        if frame[5] > 0:
-            length = frame[5] + 10
+        frame = bytearray(read)
+        if frame[3:5] == bytearray(b"\xff\xff"):
+            import struct
+            length = struct.unpack("<H", bytes(frame[5:7]))[0] + 10
             while len(frame) < length:
-                read = self._read()
-                frame += read
-            assert len(frame) == length
+                frame += bytearray(self._read())
+            if len(frame) != length:
+                raise IOError(errno.EIO, os.strerror(errno.EIO))
 
-        self.prev_read = read[:]
+        self.prev_read = bytes(frame)
 
         log.log(logging.DEBUG-1, "<<< %s", hexlify(frame).decode())
 

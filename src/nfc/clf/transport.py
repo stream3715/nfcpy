@@ -26,6 +26,9 @@ import os
 import re
 import errno
 import asyncio
+import collections
+import struct
+import time
 from binascii import hexlify
 
 if not os.getenv("READTHEDOCS"):  # pragma: no cover
@@ -365,8 +368,6 @@ class BLE(object):
     MAN_NAME_UUID = "00002a29-0000-1000-8000-00805f9b34fb"
     MODEL_NBR_UUID = "00002a24-0000-1000-8000-00805f9b34fb"
 
-    prev_read = b''
-
     @classmethod
     def find(cls, path, timeout):
         if not path.startswith("ble"):
@@ -381,10 +382,14 @@ class BLE(object):
                 return
             return ':'.join([address[i:i+2] for i in range(0, 12, 2)])
 
-        log.debug("using bleak-{}".format(bleak.__version__))
+        try:
+            import importlib.metadata
+            _bleak_ver = importlib.metadata.version('bleak')
+        except Exception:
+            _bleak_ver = 'unknown'
+        log.debug("using bleak-{}".format(_bleak_ver))
 
         try:
-            # bleak 0.18+: return_adv=True で UUID を広告データから取得
             scan_result = wait(bleak.BleakScanner.discover(
                 timeout=timeout, return_adv=True))
             log.debug('{} BLE devices found'.format(len(scan_result)))
@@ -395,6 +400,7 @@ class BLE(object):
             return devices
 
     def __init__(self, address, timeout=10.):
+        self._notify_queue = collections.deque()
         wait(self.connect(address, timeout))
 
     def __del__(self):
@@ -408,8 +414,11 @@ class BLE(object):
         pass
 
     async def connect(self, address, timeout):
-        self.client = bleak.BleakClient(address)
-        await self.client.connect(timeout=timeout)
+        self.client = bleak.BleakClient(
+            address, timeout=timeout,
+            winrt={"use_cached_services": False},
+        )
+        await self.client.connect()
         self._manufacture_name = (await self.client.read_gatt_char(self.MAN_NAME_UUID)).decode()
         self._product_name = (await self.client.read_gatt_char(self.MODEL_NBR_UUID)).decode()
 
@@ -422,45 +431,46 @@ class BLE(object):
         return self._product_name
 
     def get_uuids(self):
-        # bleak 0.18+ では services プロパティで取得
         return [s.uuid for s in self.client.services]
 
+    def _on_notify(self, characteristic, data):
+        self._notify_queue.append(bytes(data))
+
     def notify_only(self, uuid):
-        wait(self.client.start_notify(uuid, lambda sender, data: None))
+        wait(self.client.start_notify(uuid, self._on_notify))
 
     def read(self, timeout=None):
-        read = self._read()
+        # timeout は USB と同じミリ秒単位。None のとき BLE 用デフォルト 1000ms。
+        deadline = time.monotonic() + (timeout / 1000.0 if timeout is not None else 1.0)
 
-        if read == self.prev_read:
-            read = self._read()
+        while not self._notify_queue:
+            if time.monotonic() >= deadline:
+                raise IOError(errno.ETIMEDOUT, os.strerror(errno.ETIMEDOUT))
+            wait(asyncio.sleep(0.02))
 
-        if read == self.prev_read:
-            raise IOError(errno.ETIMEDOUT, os.strerror(errno.ETIMEDOUT))
+        data = self._notify_queue.popleft()
+        frame = bytearray(data)
 
-        frame = bytearray(read)
         if frame[3:5] == bytearray(b"\xff\xff"):
-            import struct
             length = struct.unpack("<H", bytes(frame[5:7]))[0] + 10
             while len(frame) < length:
-                frame += bytearray(self._read())
+                while not self._notify_queue:
+                    if time.monotonic() >= deadline:
+                        raise IOError(errno.ETIMEDOUT, os.strerror(errno.ETIMEDOUT))
+                    wait(asyncio.sleep(0.02))
+                frame += bytearray(self._notify_queue.popleft())
             if len(frame) != length:
                 raise IOError(errno.EIO, os.strerror(errno.EIO))
 
-        self.prev_read = bytes(frame)
-
         log.log(logging.DEBUG-1, "<<< %s", hexlify(frame).decode())
-
         return frame
-
-    def _read(self):
-        return wait(self.client.read_gatt_char(self.read_uuid))
 
     def write(self, frame, timeout=None):
         log.log(logging.DEBUG-1, ">>> %s", hexlify(frame).decode())
 
         while len(frame) > 0:
-            self._write(frame[:20])
+            try:
+                wait(self.client.write_gatt_char(self.write_uuid, frame[:20]))
+            except Exception as e:
+                raise IOError(errno.EIO, str(e)) from e
             frame = frame[20:]
-
-    def _write(self, write):
-        wait(self.client.write_gatt_char(self.write_uuid, write))

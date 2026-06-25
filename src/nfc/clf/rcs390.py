@@ -68,7 +68,10 @@ class Device(device.Device):
         self.log = logger or log
 
     def close(self):
-        return self.port100.close()
+        try:
+            return self.port100.close()
+        except IOError:
+            pass
 
     def mute(self):
         return self.port100.mute()

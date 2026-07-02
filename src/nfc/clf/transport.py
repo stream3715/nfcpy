@@ -28,6 +28,7 @@ import errno
 import asyncio
 import collections
 import struct
+import threading
 import time
 from binascii import hexlify
 
@@ -354,14 +355,6 @@ class USB(object):
                 raise IOError(errno.EIO, os.strerror(errno.EIO))
 
 
-# モジュールレベル永続ループ — asyncio.get_event_loop() 非推奨を回避
-_ble_loop = asyncio.new_event_loop()
-
-
-def wait(coroutine):
-    return _ble_loop.run_until_complete(coroutine)
-
-
 class BLE(object):
     TYPE = "BLE"
 
@@ -401,25 +394,42 @@ class BLE(object):
         log.debug("using bleak-{}".format(_bleak_ver))
 
         try:
-            scan_result = wait(bleak.BleakScanner.discover(
+            scan_result = asyncio.run(bleak.BleakScanner.discover(
                 timeout=timeout, return_adv=True))
             log.debug('{} BLE devices found'.format(len(scan_result)))
             return scan_result
         except TypeError:
-            devices = wait(bleak.BleakScanner.discover(timeout=timeout))
+            devices = asyncio.run(bleak.BleakScanner.discover(timeout=timeout))
             log.debug('{} BLE devices found'.format(len(devices)))
             return devices
 
     def __init__(self, address, timeout=10.):
         self._notify_queue = collections.deque()
-        wait(self.connect(address, timeout))
+        # Each BLE instance owns a private event loop running on a
+        # dedicated background thread. Sharing a single event loop
+        # across multiple concurrently polling BLE devices (e.g. from
+        # separate threads) is not safe -- asyncio event loops are not
+        # thread-safe and concurrent run_until_complete() calls from
+        # different threads corrupt the loop's internal state.
+        self._loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(
+            target=self._loop.run_forever, daemon=True)
+        self._loop_thread.start()
+        self._wait(self.connect(address, timeout))
+
+    def _wait(self, coroutine):
+        return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result()
 
     def __del__(self):
         if hasattr(self, 'client'):
             try:
-                wait(self.client.disconnect())
+                self._wait(self.client.disconnect())
             except Exception:
                 pass
+        if hasattr(self, '_loop'):
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._loop_thread.join(timeout=1)
+            self._loop.close()
 
     def close(self):
         pass
@@ -448,7 +458,7 @@ class BLE(object):
         self._notify_queue.append(bytes(data))
 
     def notify_only(self, uuid):
-        wait(self.client.start_notify(uuid, self._on_notify))
+        self._wait(self.client.start_notify(uuid, self._on_notify))
 
     def read(self, timeout=None):
         # timeout は USB と同じミリ秒単位。None のとき BLE 用デフォルト 1000ms。
@@ -457,7 +467,7 @@ class BLE(object):
         while not self._notify_queue:
             if time.monotonic() >= deadline:
                 raise IOError(errno.ETIMEDOUT, os.strerror(errno.ETIMEDOUT))
-            wait(asyncio.sleep(0.02))
+            time.sleep(0.02)
 
         data = self._notify_queue.popleft()
         frame = bytearray(data)
@@ -468,7 +478,7 @@ class BLE(object):
                 while not self._notify_queue:
                     if time.monotonic() >= deadline:
                         raise IOError(errno.ETIMEDOUT, os.strerror(errno.ETIMEDOUT))
-                    wait(asyncio.sleep(0.02))
+                    time.sleep(0.02)
                 frame += bytearray(self._notify_queue.popleft())
             if len(frame) != length:
                 raise IOError(errno.EIO, os.strerror(errno.EIO))
@@ -481,7 +491,7 @@ class BLE(object):
 
         while len(frame) > 0:
             try:
-                wait(self.client.write_gatt_char(self.write_uuid, frame[:20]))
+                self._wait(self.client.write_gatt_char(self.write_uuid, frame[:20]))
             except Exception as e:
                 raise IOError(errno.EIO, str(e)) from e
             frame = frame[20:]

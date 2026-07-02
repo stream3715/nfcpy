@@ -4,7 +4,9 @@
 
 Usage:
     python examples/rcs390_poll.py               # BLE スキャンで自動検出
-    python examples/rcs390_poll.py AABBCCDDEEFF  # アドレス直指定
+    python examples/rcs390_poll.py AABBCCDDEEFF  # アドレス直指定 (BD_ADDR)
+    python examples/rcs390_poll.py 246C0000-0000-1000-8000-00805F9B34FB
+                                                   # macOS (CoreBluetooth) の場合は UUID を指定
     python examples/rcs390_poll.py -d ...        # デバッグログ付き
 """
 import sys
@@ -66,7 +68,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RC-S390 Felica polling test")
     parser.add_argument(
         "address", nargs="?", metavar="BLEADDR",
-        help="BLE アドレス 12桁 hex (省略でスキャン自動検出)")
+        help="BLE アドレス 12桁 hex、または macOS の場合は CoreBluetooth の"
+             " UUID (省略でスキャン自動検出)")
     parser.add_argument(
         "-i", dest="interval", type=float, default=0.5, metavar="SEC",
         help="polling 間隔 秒 (default: 0.5)")

@@ -127,9 +127,12 @@ class ContactlessFrontend(object):
 
         ``ble[:address]``
 
-           with optional *address* name as twelve-digit hexadecimal numbers
-           without colon. For example, ``ble:112233445566`` would connect to
-           ble device which has that address.
+           with optional *address* name, either as twelve-digit
+           hexadecimal numbers with or without colons (a BD_ADDR, e.g.
+           ``ble:112233445566`` or ``ble:11:22:33:44:55:66``) or, on
+           macOS/iOS where CoreBluetooth hides the real BD_ADDR, as the
+           128-bit CBPeripheral UUID reported by the OS (e.g.
+           ``ble:246C0000-0000-1000-8000-00805F9B34FB``).
 
         ``udp[:host][:port]``
 

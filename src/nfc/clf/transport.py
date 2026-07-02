@@ -368,6 +368,13 @@ class BLE(object):
     MAN_NAME_UUID = "00002a29-0000-1000-8000-00805f9b34fb"
     MODEL_NBR_UUID = "00002a24-0000-1000-8000-00805f9b34fb"
 
+    # macOS/CoreBluetooth hides the real BD_ADDR and identifies peripherals
+    # by a per-host CBPeripheral UUID instead, e.g.
+    # "246C0000-0000-1000-8000-00805F9B34FB".
+    UUID_ADDRESS = re.compile(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}'
+        r'-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+
     @classmethod
     def find(cls, path, timeout):
         if not path.startswith("ble"):
@@ -377,7 +384,11 @@ class BLE(object):
             raise IOError(errno.ENODEV, "bleak not installed, try 'pip install bleak'")
 
         if ':' in path:
-            address = path.split(':')[1].upper()
+            address = path.split(':', 1)[1].upper()
+            if cls.UUID_ADDRESS.match(address):
+                # CoreBluetooth (macOS/iOS) peripheral identifier
+                return address
+            address = address.replace(':', '')
             if len(address) != 12:
                 return
             return ':'.join([address[i:i+2] for i in range(0, 12, 2)])
